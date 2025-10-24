@@ -40,8 +40,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    let args: Vec<String> = env::args().collect();
+    let api_key: String;
+    if args.len() > 1 {
+        api_key = args[1].clone();
+    } else {
+        api_key = match env::var("GEMINI_API_KEY") {
+            Ok(api_key) => api_key,
+            Err(e) => {
+                println!("make sure setting api key {}",e);
+
+                return Ok(());
+            },
+        };
+
+    }
+
     let prompto = create_prompt(&diff);
-    let message = generate_commit_message(&prompto).await?;
+    let message = generate_commit_message(&prompto,api_key).await?;
 
     println!("{:?}",message);
 
@@ -79,52 +95,43 @@ The key words “MUST”, “MUST NOT”, “REQUIRED”, “SHALL”, “SHALL 
 14. Types other than feat and fix MAY be used in your commit messages, e.g., docs: update ref docs.
 15. The units of information that make up Conventional Commits MUST NOT be treated as case sensitive by implementors, with the exception of BREAKING CHANGE which MUST be uppercase.
 16. BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE, when used as a token in a footer.
-"#;
+    "#;
 
-fn create_prompt(diff: &str) -> String {
-    format!(
-        "{}\n\n---\n\n## Git Diff\n\n```diff\n{}\n```",
-        COMMIT_MESSAGE_GUIDELINE,
-        diff
-    )
-}
+    fn create_prompt(diff: &str) -> String {
+        format!(
+            "{}\n\n---\n\n## Git Diff\n\n```diff\n{}\n```",
+            COMMIT_MESSAGE_GUIDELINE,
+            diff
+        )
+    }
 
 #[derive(Deserialize, Debug)]
 struct Part {
     text: String,
-}
+    }
 
 #[derive(Deserialize, Debug)]
 struct Content {
     parts: Vec<Part>,
-}
+    }
 
 #[derive(Deserialize, Debug)]
 struct Candidate {
     content: Option<Content>, 
     finish_reason: Option<String>, 
     safety_ratings: Option<serde_json::Value>,
-}
+    }
 
 #[derive(Deserialize, Debug)]
 struct GeminiResponse {
     candidates: Vec<Candidate>,
     prompt_feedback: Option<serde_json::Value>,
-}
+    }
 
-async fn generate_commit_message(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let api_key: String = match env::var("GEMINI_API_KEY") {
-        Ok(api_key) => api_key,
-        Err(e) => {
-            println!("make sure setting api key {}",e);
-            return Ok("no api key".to_string());
-        },
-    };
-
+async fn generate_commit_message(prompt: &str, api_key: String) -> Result<String, Box<dyn std::error::Error>> {
     let client = Client::new();
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
-        api_key
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",api_key
     );
 
     let payload = serde_json::json!({
@@ -158,17 +165,17 @@ async fn generate_commit_message(prompt: &str) -> Result<String, Box<dyn std::er
                 .and_then(|c| c.finish_reason.as_ref())
                 .unwrap_or(&"不明 (candidatesが空か構造不正)".to_string())
                 .clone();
-            
+
             let feedback_info = body.prompt_feedback
                 .map(|f| format!("Prompt Feedback: {:?}", f))
                 .unwrap_or_else(|| "No Prompt Feedback".to_string());
 
             Err(format!(
-                "Gemini APIは有効なテキストを返しませんでした。\n\
+                    "Gemini APIは有効なテキストを返しませんでした。\n\
                  原因: finish_reason='{}'\n\
                  詳細: {}",
-                reason,
-                feedback_info
+                 reason,
+                 feedback_info
             ).into())
         }
     }
