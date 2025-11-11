@@ -1,10 +1,10 @@
 use arboard::Clipboard;
 use core::str;
 use dotenvy::dotenv;
-use std::env;
 use git2::Repository;
 use reqwest::Client;
 use serde::Deserialize;
+use std::env;
 
 fn get_git_diff() -> Result<String, Box<dyn std::error::Error>> {
     let repo = match Repository::open(env::current_dir().unwrap()) {
@@ -27,43 +27,41 @@ fn get_git_diff() -> Result<String, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenv().expect(".env file not fount");
-    let diff : String= match get_git_diff() {
+    let _ = dotenv().expect(".env file not fount");
+    let diff: String = match get_git_diff() {
         Ok(message) => message,
         Err(e) => {
-            println!("error get_git_diff {}",e);
+            println!("error get_git_diff {}", e);
             return Ok(());
-        },
+        }
     };
-    if diff == "" {
+    if diff.is_empty() {
         println!("Nothing to commit");
         return Ok(());
     }
 
     let args: Vec<String> = env::args().collect();
-    let api_key: String;
-    if args.len() > 1 {
-        api_key = args[1].clone();
+    let api_key: String = if args.len() > 1 {
+        args[1].clone()
     } else {
-        api_key = match env::var("GEMINI_API_KEY") {
+        match env::var("GEMINI_API_KEY") {
             Ok(api_key) => api_key,
             Err(e) => {
-                println!("make sure setting api key {}",e);
+                println!("make sure setting api key {}", e);
 
                 return Ok(());
-            },
-        };
-
-    }
+            }
+        }
+    };
 
     let prompto = create_prompt(&diff);
-    let message = generate_commit_message(&prompto,api_key).await?;
+    let message = generate_commit_message(&prompto, api_key).await?;
 
-    println!("{:?}",message);
+    println!("{:?}", message);
 
     match copy_to_clip(&message) {
         Ok(_) => println!("success to copy to clip"),
-        Err(e) => eprintln!("fail to copy to clip {:?}",e), 
+        Err(e) => eprintln!("fail to copy to clip {:?}", e),
     }
     Ok(())
 }
@@ -73,7 +71,6 @@ fn copy_to_clip(message: &str) -> Result<(), Box<dyn std::error::Error>> {
     clipboard.set_text(message)?;
     Ok(())
 }
-
 
 const COMMIT_MESSAGE_GUIDELINE: &str = r#"
 Please generate a concise yet appropriate commit message based on the provided Git diff, following Conventional Commits.
@@ -97,41 +94,43 @@ The key words “MUST”, “MUST NOT”, “REQUIRED”, “SHALL”, “SHALL 
 16. BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE, when used as a token in a footer.
     "#;
 
-    fn create_prompt(diff: &str) -> String {
-        format!(
-            "{}\n\n---\n\n## Git Diff\n\n```diff\n{}\n```",
-            COMMIT_MESSAGE_GUIDELINE,
-            diff
-        )
-    }
+fn create_prompt(diff: &str) -> String {
+    format!(
+        "{}\n\n---\n\n## Git Diff\n\n```diff\n{}\n```",
+        COMMIT_MESSAGE_GUIDELINE, diff
+    )
+}
 
 #[derive(Deserialize, Debug)]
 struct Part {
     text: String,
-    }
+}
 
 #[derive(Deserialize, Debug)]
 struct Content {
     parts: Vec<Part>,
-    }
+}
 
 #[derive(Deserialize, Debug)]
 struct Candidate {
-    content: Option<Content>, 
-    finish_reason: Option<String>, 
-    safety_ratings: Option<serde_json::Value>,
-    }
+    content: Option<Content>,
+    finish_reason: Option<String>,
+}
 
 #[derive(Deserialize, Debug)]
 struct GeminiResponse {
     candidates: Vec<Candidate>,
     prompt_feedback: Option<serde_json::Value>,
-    }
+}
 
-async fn generate_commit_message(prompt: &str, api_key: String) -> Result<String, Box<dyn std::error::Error>> {
+async fn generate_commit_message(
+    prompt: &str,
+    api_key: String,
+) -> Result<String, Box<dyn std::error::Error>> {
     let client = Client::new();
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",api_key
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
+        api_key
     );
 
     let payload = serde_json::json!({
@@ -149,34 +148,38 @@ async fn generate_commit_message(prompt: &str, api_key: String) -> Result<String
         .json(&payload)
         .send()
         .await?
-        .error_for_status()?; 
+        .error_for_status()?;
     let body: GeminiResponse = response.json().await?;
 
-    let commit_message = body.candidates.get(0)
+    let commit_message = body
+        .candidates
+        .first()
         .and_then(|c| c.content.as_ref())
-        .and_then(|content| content.parts.get(0))
+        .and_then(|content| content.parts.first())
         .map(|part| part.text.trim().to_string());
-
 
     match commit_message {
         Some(text) => Ok(text),
         None => {
-            let reason = body.candidates.get(0)
+            let reason = body
+                .candidates
+                .first()
                 .and_then(|c| c.finish_reason.as_ref())
                 .unwrap_or(&"不明 (candidatesが空か構造不正)".to_string())
                 .clone();
 
-            let feedback_info = body.prompt_feedback
+            let feedback_info = body
+                .prompt_feedback
                 .map(|f| format!("Prompt Feedback: {:?}", f))
                 .unwrap_or_else(|| "No Prompt Feedback".to_string());
 
             Err(format!(
-                    "Gemini APIは有効なテキストを返しませんでした。\n\
+                "Gemini APIは有効なテキストを返しませんでした。\n\
                  原因: finish_reason='{}'\n\
                  詳細: {}",
-                 reason,
-                 feedback_info
-            ).into())
+                reason, feedback_info
+            )
+            .into())
         }
     }
 }
