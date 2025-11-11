@@ -128,27 +128,28 @@ async fn generate_commit_message(
     api_key: String,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let client = Client::new();
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
-        api_key
-    );
+
+    let url =
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
     let payload = serde_json::json!({
         "contents": [
-        {
-            "parts": [
-            {"text": prompt}
-            ]
-        }
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
         ],
     });
 
     let response = client
-        .post(&url)
+        .post(url)
+        .header("X-Goog-Api-Key", api_key) // ここでヘッダとしてAPIキーを追加
         .json(&payload)
         .send()
         .await?
         .error_for_status()?;
+
     let body: GeminiResponse = response.json().await?;
 
     let commit_message = body
