@@ -27,7 +27,10 @@ fn get_git_diff() -> Result<String, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _ = dotenv().expect(".env file not fount");
+    // Try to load .env if present, but do not require it.
+    // This allows passing the API key via command-line args instead.
+    let _ = dotenv().ok();
+
     let diff: String = match get_git_diff() {
         Ok(message) => message,
         Err(e) => {
@@ -41,14 +44,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let args: Vec<String> = env::args().collect();
-    let api_key: String = if args.len() > 1 {
-        args[1].clone()
+
+    // Parse API key from command-line in multiple common forms:
+    //  - positional first arg: cargo run -- <API_KEY>
+    //  - --api-key=KEY
+    //  - -k KEY
+    // If none provided, fall back to GEMINI_API_KEY env var (which can come from .env).
+    let mut api_key_arg: Option<String> = None;
+    let mut i = 1;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "--help" || a == "-h" {
+            println!("Usage:");
+            println!("  Provide Gemini API key via one of:");
+            println!("    - As first positional argument: <program> <API_KEY>");
+            println!("    - Using --api-key=<KEY>");
+            println!("    - Using -k <KEY>");
+            println!("  Or set GEMINI_API_KEY in environment (or in a .env file).");
+            return Ok(());
+        } else if let Some(rest) = a.strip_prefix("--api-key=") {
+            api_key_arg = Some(rest.to_string());
+            break;
+        } else if a == "-k" {
+            if i + 1 < args.len() {
+                api_key_arg = Some(args[i + 1].clone());
+            }
+            break;
+        } else if !a.starts_with('-') {
+            // treat first non-flag positional as API key
+            api_key_arg = Some(a.clone());
+            break;
+        }
+        i += 1;
+    }
+
+    let api_key: String = if let Some(key) = api_key_arg {
+        key
     } else {
         match env::var("GEMINI_API_KEY") {
             Ok(api_key) => api_key,
-            Err(e) => {
-                println!("make sure setting api key {}", e);
-
+            Err(_) => {
+                println!(
+                    "No API key provided. Provide it via --api-key, -k, positional arg, or set GEMINI_API_KEY in environment (.env is optional)."
+                );
                 return Ok(());
             }
         }
