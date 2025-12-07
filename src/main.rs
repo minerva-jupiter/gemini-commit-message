@@ -27,8 +27,6 @@ fn get_git_diff() -> Result<String, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Try to load .env if present, but do not require it.
-    // This allows passing the API key via command-line args instead.
     let _ = dotenv().ok();
 
     let diff: String = match get_git_diff() {
@@ -45,11 +43,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: Vec<String> = env::args().collect();
 
-    // Parse API key from command-line in multiple common forms:
-    //  - positional first arg: cargo run -- <API_KEY>
-    //  - --api-key=KEY
-    //  - -k KEY
-    // If none provided, fall back to GEMINI_API_KEY env var (which can come from .env).
     let mut api_key_arg: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
@@ -71,7 +64,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             break;
         } else if !a.starts_with('-') {
-            // treat first non-flag positional as API key
             api_key_arg = Some(a.clone());
             break;
         }
@@ -182,7 +174,7 @@ async fn generate_commit_message(
 
     let response = client
         .post(url)
-        .header("X-Goog-Api-Key", api_key) // ここでヘッダとしてAPIキーを追加
+        .header("X-Goog-Api-Key", api_key)
         .json(&payload)
         .send()
         .await?
