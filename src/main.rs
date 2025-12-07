@@ -28,7 +28,6 @@ fn get_git_diff() -> Result<String, Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = dotenv().ok();
-
     let diff: String = match get_git_diff() {
         Ok(message) => message,
         Err(e) => {
@@ -42,7 +41,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let args: Vec<String> = env::args().collect();
-
     let mut api_key_arg: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
