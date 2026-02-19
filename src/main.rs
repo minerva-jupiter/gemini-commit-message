@@ -1,32 +1,26 @@
 use arboard::Clipboard;
 use core::str;
 use dotenvy::dotenv;
-use git2::Repository;
-use reqwest::Client;
 use serde::Deserialize;
 use std::env;
+use std::process::Command;
 
 fn get_git_diff() -> Result<String, Box<dyn std::error::Error>> {
-    let repo = match Repository::open(env::current_dir().unwrap()) {
-        Ok(repo) => repo,
-        Err(e) => panic!("faild to open: {}", e),
-    };
+    let diff = Command::new("git")
+        .arg("diff")
+        .arg("--cached")
+        .output()?;
 
-    let head = repo.head()?.peel_to_tree()?;
-    let diff = repo.diff_tree_to_index(Some(&head), Some(&repo.index()?), None)?;
+    if !diff.status.success() {
+        println!("error get_git_diff {}", diff.status);
+        return Ok(String::new());
+    }
 
-    let mut diff_text_vec = Vec::new();
-    diff.print(git2::DiffFormat::Patch, |_, _, line| {
-        diff_text_vec.extend_from_slice(line.content());
-        true
-    })?;
-
-    let diff_text_string = String::from_utf8(diff_text_vec)?;
+    let diff_text_string = String::from_utf8(diff.stdout)?;
     Ok(diff_text_string)
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = dotenv().ok();
     let diff: String = match get_git_diff() {
         Ok(message) => message,
@@ -83,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let prompto = create_prompt(&diff);
-    let message = generate_commit_message(&prompto, api_key).await?;
+    let message = generate_commit_message(&prompto, api_key)?;
 
     println!("{:?}", message);
 
@@ -151,12 +145,10 @@ struct GeminiResponse {
     prompt_feedback: Option<serde_json::Value>,
 }
 
-async fn generate_commit_message(
+fn generate_commit_message(
     prompt: &str,
     api_key: String,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let client = Client::new();
-
     let url =
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
@@ -170,15 +162,11 @@ async fn generate_commit_message(
         ],
     });
 
-    let response = client
-        .post(url)
-        .header("X-Goog-Api-Key", api_key)
-        .json(&payload)
-        .send()
-        .await?
-        .error_for_status()?;
-
-    let body: GeminiResponse = response.json().await?;
+    let body = ureq::post(url)
+        .header("X-Goog-Api-Key", &api_key)
+        .send_json(payload)?
+        .body_mut()
+        .read_json::<GeminiResponse>()?;
 
     let commit_message = body
         .candidates
