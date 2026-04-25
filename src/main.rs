@@ -6,10 +6,7 @@ use std::env;
 use std::process::Command;
 
 fn get_git_diff() -> Result<String, Box<dyn std::error::Error>> {
-    let diff = Command::new("git")
-        .arg("diff")
-        .arg("--cached")
-        .output()?;
+    let diff = Command::new("git").arg("diff").arg("--cached").output()?;
 
     if !diff.status.success() {
         println!("error get_git_diff {}", diff.status);
@@ -79,10 +76,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prompto = create_prompt(&diff);
     let message = generate_commit_message(&prompto, api_key)?;
 
-    println!("{:?}", message);
+    println!("{}", message);
 
     match copy_to_clip(&message) {
-        Ok(_) => println!("success to copy to clip"),
+        Ok(_) => {}
         Err(e) => eprintln!("fail to copy to clip {:?}", e),
     }
     Ok(())
@@ -149,8 +146,7 @@ fn generate_commit_message(
     prompt: &str,
     api_key: String,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let url =
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+    let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent";
 
     let payload = serde_json::json!({
         "contents": [
