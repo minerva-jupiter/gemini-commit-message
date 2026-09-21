@@ -143,6 +143,24 @@ struct GeminiResponse {
     prompt_feedback: Option<serde_json::Value>,
 }
 
+#[derive(Deserialize, Debug)]
+struct GeminiErrorDetail {
+    message: String,
+    status: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct GeminiError {
+    error: GeminiErrorDetail,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+enum GeminiResult {
+    Ok(GeminiResponse),
+    Err(GeminiError),
+}
+
 fn generate_commit_message(
     prompt: &str,
     api_key: String,
@@ -159,11 +177,22 @@ fn generate_commit_message(
         ],
     });
 
-    let body = ureq::post(url)
+    let mut res = ureq::post(url)
         .header("X-Goog-Api-Key", &api_key)
-        .send_json(payload)?
-        .body_mut()
-        .read_json::<GeminiResponse>()?;
+        .send_json(payload)?;
+
+    let result = res.body_mut().read_json::<GeminiResult>()?;
+
+    let body = match result {
+        GeminiResult::Ok(body) => body,
+        GeminiResult::Err(e) => {
+            return Err(format!(
+                "Gemini API Error: {} (Status: {:?})",
+                e.error.message, e.error.status
+            )
+            .into());
+        }
+    };
 
     let commit_message = body
         .candidates
